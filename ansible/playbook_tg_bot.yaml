@@ -274,8 +274,8 @@
   become: true
   vars:
     repo_url: 'https://github.com/justbelka/DevOpsBot.git'
-    dest_dir: '/bot'
-    bot_start_command: '/bot/devops_bot/bot/bot.py'
+    dest_dir: '/'
+    bot_start_command: '/bot/bot.py'
   tasks:
 
     - name: Checking Git
@@ -292,7 +292,7 @@
     - name: Copy .env file to the target directory
       copy:
         src: "../.env"
-        dest: "/bot/.env"
+        dest: "/.env"
 
     - name: Installing packages
       apt:
