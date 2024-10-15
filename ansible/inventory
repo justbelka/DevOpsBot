@@ -1,0 +1,8 @@
+[tg_bot]
+tg_bot_host ansible_host=10.128.0.21 ansible_user=ansible ansible_password=ansible ansible_become_password=ansible
+
+[db]
+db_host ansible_host=10.128.0.22 ansible_user=ansible ansible_password=ansible ansible_become_password=ansible
+
+[db_repl]
+db_repl_host ansible_host=10.128.0.23 ansible_user=ansible ansible_password=ansible ansible_become_password=ansible

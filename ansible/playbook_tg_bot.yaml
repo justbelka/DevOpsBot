@@ -1,0 +1,316 @@
+---
+- name: Setting Up Database
+  hosts: db
+  become: true
+  vars:
+    db_user: "{{ env_vars.DB_USER | default('postgres') }}"
+    db_password: "{{ env_vars.DB_PASSWORD | default('postgres') }}"
+    db_name: "{{ env_vars.DB_DATABASE | default('pt') }}"
+    repl_user: "{{ env_vars.DB_REPL_USER | default('repluser') }}"
+    repl_password: "{{ env_vars.DB_REPL_PASSWORD | default('replpassword') }}"
+    postgresql_version: "14"
+  tasks:
+    - name: Copy .env file to the target host
+      copy:
+        src: ../.env
+        dest: /tmp/.env
+        mode: '0644'
+    
+    - name: Get env file content
+      slurp:
+        src: /tmp/.env
+      register: env_file_content
+
+    - name: Parse environment
+      set_fact:
+        env_vars: "{{ ('{' + (env_file_content.content | b64decode).split('\n') | select | map('regex_replace', '([^=]*)=(.*)', '\"\\1\": \"\\2\"') | join(',') + '}') | from_json }}"
+
+    - name: Display environment variables
+      command: env
+      environment: "{{ env_vars }}"
+
+    - name: Installing packages
+      apt:
+        name:
+          - python3
+          - python3-pip
+          - python3-venv
+        state: present
+
+    - name: Install psycopg2
+      pip:
+        name: psycopg2-binary
+        state: present
+
+    - name: Installing PostgreSQL
+      apt:
+        name: "postgresql-{{ postgresql_version }}"
+        state: present
+
+    - name: Create oracle/pg_data/archive directory
+      file:
+        path: /oracle/pg_data/archive
+        state: directory
+
+    - name: Chown oracle directory
+      file:
+        path: /oracle/pg_data/archive/
+        owner: "{{ env_vars.DB_USER }}"
+        group: "{{ env_vars.DB_USER }}"
+        recurse: true
+
+    - name: listen_addresses in postgresql.conf
+      lineinfile:
+        path: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+        regexp: '^#?listen_addresses'
+        line: "listen_addresses = '*'"
+        state: present
+
+    - name: archive_mode in postgresql.conf
+      lineinfile:
+        path: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+        regexp: '^#?archive_mode'
+        line: "archive_mode = on"
+        state: present
+    
+    - name: archive_command in postgresql.conf
+      lineinfile:
+        path: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+        regexp: '^#?archive_command'
+        line: "archive_command = 'cp %p /oracle/pg_data/archive/%f'"
+        state: present
+
+    - name: max_wal_senders in postgresql.conf
+      lineinfile:
+        path: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+        regexp: '^#?max_wal_senders'
+        line: "max_wal_senders = 10"
+        state: present
+
+    - name: wal_level in postgresql.conf
+      lineinfile:
+        path: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+        regexp: '^#?wal_level'
+        line: "wal_level = replica"
+        state: present
+    
+    - name: wal_log_hints in postgresql.conf
+      lineinfile:
+        path: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+        regexp: '^#?wal_log_hints'
+        line: "wal_log_hints = on"
+        state: present
+    
+    - name: hot_standby in postgresql.conf
+      lineinfile:
+        path: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+        regexp: '^#?hot_standby'
+        line: "hot_standby=on"
+        state: present
+    
+    - name: max_replication_slots in postgresql.conf
+      lineinfile:
+        path: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+        regexp: '^#?max_replication_slots'
+        line: "max_replication_slots=10"
+        state: present
+
+    - name: hot_standby_feedback in postgresql.conf
+      lineinfile:
+        path: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+        regexp: '^#?hot_standby_feedback'
+        line: "hot_standby_feedback=on"
+        state: present
+    
+    - name: log_replication_commands in postgresql.conf
+      lineinfile:
+        path: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+        regexp: '^#?log_replication_commands=on'
+        line: "log_replication_commands=on"
+        state: present
+
+    - name: pg_hba.conf (1) for replication
+      lineinfile:
+        path: "/etc/postgresql/{{ postgresql_version }}/main/pg_hba.conf"
+        line: "host replication {{ repl_user }} {{ hostvars['db_repl_host']['ansible_host'] }}/32 scram-sha-256"
+        state: present
+        insertafter: EOF
+    
+    - name: pg_hba.conf (2) for replication
+      lineinfile:
+        path: "/etc/postgresql/{{ postgresql_version }}/main/pg_hba.conf"
+        line: "host all {{ db_user }} 0.0.0.0/0 scram-sha-256"
+        state: present
+        insertafter: EOF
+
+    - name: Change PostgreSQL password for user postgres
+      shell: sudo -u postgres psql -c "ALTER USER postgres PASSWORD '{{ env_vars.DB_PASSWORD }}';"
+    
+    - name: Creating Replication User
+      shell: sudo -u postgres psql -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ env_vars.DB_REPL_USER }}') THEN CREATE ROLE {{ env_vars.DB_REPL_USER }} REPLICATION LOGIN ENCRYPTED PASSWORD '{{ env_vars.DB_REPL_PASSWORD }}'; END IF; END \$\$;"
+
+    - name: Creating Database
+      shell: sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='{{ env_vars.DB_DATABASE }}';" | grep -q 1 || sudo -u postgres psql -c "CREATE DATABASE {{ env_vars.DB_DATABASE }} OWNER postgres;"
+    
+    - name: Creating Table Phones
+      shell: sudo -u postgres psql -d {{ env_vars.DB_DATABASE }} -c "CREATE TABLE IF NOT EXISTS phones (id SERIAL PRIMARY KEY, phone VARCHAR(11));"
+    
+    - name: Creating Table Emails
+      shell: sudo -u postgres psql -d {{ env_vars.DB_DATABASE }} -c "CREATE TABLE IF NOT EXISTS emails (id SERIAL PRIMARY KEY, email VARCHAR(30));"
+  
+    - name: Restart PostgreSQL service
+      service:
+        name: postgresql
+        state: restarted
+
+
+
+- name: Setting Up Database Replic
+  hosts: db_repl
+  become: true
+  vars:
+    db_user: "{{ env_vars.DB_USER | default('postgres') }}"
+    db_password: "{{ env_vars.DB_PASSWORD | default('postgres') }}"
+    db_name: "{{ env_vars.DB_DATABASE | default('pt') }}"
+    repl_user: "{{ env_vars.DB_REPL_USER | default('repluser') }}"
+    repl_password: "{{ env_vars.DB_REPL_PASSWORD | default('replpassword') }}"
+    postgresql_version: "14"
+    db_host: "{{ hostvars['db_repl']['ansible_host'] }}"
+
+  tasks:
+    - name: Copy .env file to the target host
+      copy:
+        src: ../.env
+        dest: /tmp/.env
+        mode: '0644'
+    
+    - name: Get env file content
+      slurp:
+        src: /tmp/.env
+      register: env_file_content
+
+    - name: Parse environment
+      set_fact:
+        env_vars: "{{ ('{' + (env_file_content.content | b64decode).split('\n') | select | map('regex_replace', '([^=]*)=(.*)', '\"\\1\": \"\\2\"') | join(',') + '}') | from_json }}"
+
+    - name: Display environment variables
+      command: env
+      environment: "{{ env_vars }}"
+
+    - name: Installing packages
+      apt:
+        name:
+          - python3
+          - python3-pip
+          - python3-venv
+        state: present
+
+    - name: Install psycopg2
+      pip:
+        name: psycopg2-binary
+        state: present
+
+    - name: Install PostgreSQL
+      apt:
+        name:
+          - postgresql-{{ postgresql_version }}
+          - postgresql-contrib
+          - libpq-dev
+        state: present
+        update_cache: yes
+
+    - name: Ensure PostgreSQL is started and enabled at boot
+      service:
+        name: postgresql
+        state: started
+        enabled: yes
+
+    - name: Stop PostgreSQL service
+      systemd:
+        name: postgresql
+        state: stopped
+
+    - name: Clear Data
+      command: rm -rf /var/lib/postgresql/{{ postgresql_version }}/main/
+      become: true
+      become_user: root
+    
+    - name: Create Data
+      command: mkdir -p /var/lib/postgresql/{{ postgresql_version }}/main
+      become: true
+      become_user: root
+    
+    - name: Set ownership and permissions on PostgreSQL data directory
+      file: 
+        path: /var/lib/postgresql/{{ postgresql_version }}/main/
+        owner: postgres
+        group: postgres
+        mode: '0700'
+        recurse: yes
+
+    - name: Starting Base Clonning From Main Database
+      command: >
+        pg_basebackup -R -h {{ hostvars['db_host']['ansible_host'] }} -U {{ env_vars.DB_REPL_USER }} -D /var/lib/postgresql/{{ postgresql_version }}/main -P
+      environment:
+        PGPASSWORD: "{{ env_vars.DB_REPL_PASSWORD }}"
+      
+    - name: Set ownership and permissions on PostgreSQL data directory
+      file: 
+        path: /var/lib/postgresql/{{ postgresql_version }}/main/
+        owner: postgres
+        group: postgres
+        mode: '0700'
+        recurse: yes
+
+    - name: Starting PostgreSQL
+      systemd:
+        name: postgresql
+        state: started
+
+
+
+- name: Setting Up Telegram Bot
+  hosts: tg_bot
+  become: true
+  vars:
+    repo_url: 'https://github.com/justbelka/DevOpsBot.git'
+    dest_dir: '/bot'
+    bot_start_command: '/bot/devops_bot/bot/bot.py'
+  tasks:
+
+    - name: Checking Git
+      apt:
+        name: git
+        state: present
+
+    - name: Clonning repository with code
+      git:
+        repo: '{{ repo_url }}'
+        dest: '{{ dest_dir }}'
+        update: yes
+
+    - name: Copy .env file to the target directory
+      copy:
+        src: "../.env"
+        dest: "/bot/.env"
+
+    - name: Installing packages
+      apt:
+        name:
+          - python3
+          - python3-pip
+          - python3-venv
+        state: present
+
+    - name: Installing Dependencies from requirements.txt
+      pip:
+        requirements: "{{ dest_dir }}/devops_bot/bot/requirements.txt"
+        virtualenv: "{{ dest_dir }}/venv"
+        virtualenv_command: python3 -m venv
+    
+    - name: Starting Telegram Bot
+      shell: "{{ dest_dir }}/venv/bin/python3 {{ bot_start_command }}"
+      args:
+        chdir: "{{ dest_dir }}"
+      async: 0
+      poll: 0
