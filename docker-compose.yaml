@@ -14,9 +14,9 @@ services:
     networks:
       custom_network:
         ipv4_address:  192.168.0.10
-        dns:
-          - 8.8.8.8
-          - 8.8.4.4
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
 
   db:
     build:
@@ -48,9 +48,9 @@ services:
     networks:
       custom_network:
         ipv4_address:  192.168.0.11
-        dns:
-          - 8.8.8.8
-          - 8.8.4.4
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
 
   db_repl:
     build:
@@ -81,9 +81,9 @@ services:
     networks:
       custom_network:
         ipv4_address:  192.168.0.12
-        dns:
-          - 8.8.8.8
-          - 8.8.4.4
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
 volumes:
   db-data: {}
   replica-data: {}
