@@ -1,7 +1,7 @@
 services:
   tg_bot:
     build:
-      context: ./devops_bot/bot
+      context: ./bot
       dockerfile: Dockerfile
     ports:
       - 8080:80
@@ -21,7 +21,7 @@ services:
 
   db:
     build:
-      context: ./devops_bot/db
+      context: ./db
       dockerfile: Dockerfile
     ports:
       - "5432:5432"
@@ -55,7 +55,7 @@ services:
 
   db_repl:
     build:
-      context: ./devops_bot/db_repl
+      context: ./db_repl
       dockerfile: Dockerfile
     ports:
       - "5433:5433"
