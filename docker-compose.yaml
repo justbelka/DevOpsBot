@@ -1,5 +1,6 @@
 services:
   tg_bot:
+    container_name: AlexBelokrylovBotImage
     build:
       context: ./bot
       dockerfile: Dockerfile
@@ -15,11 +16,9 @@ services:
     networks:
       custom_network:
         ipv4_address:  192.168.0.10
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
 
   db:
+    container_name: AlexBelokrylovDBImage
     build:
       context: ./db
       dockerfile: Dockerfile
@@ -49,11 +48,9 @@ services:
     networks:
       custom_network:
         ipv4_address:  192.168.0.11
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
 
   db_repl:
+    container_name: AlexBelokrylovDBReplImage
     build:
       context: ./db_repl
       dockerfile: Dockerfile
@@ -82,9 +79,6 @@ services:
     networks:
       custom_network:
         ipv4_address:  192.168.0.12
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
 volumes:
   db-data: {}
   replica-data: {}
