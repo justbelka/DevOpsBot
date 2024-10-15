@@ -9,7 +9,7 @@ services:
       - .env
     volumes:
       - db-logs:/var/log/postgresql/
-      - .env:/devops_bot/bot/.env
+      - .env:/.env
     depends_on:
       - db
     networks:

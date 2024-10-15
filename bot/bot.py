@@ -44,7 +44,7 @@ DB_COMMANDS = '''Выбери команду:
 '''
 
 
-load_dotenv(dotenv_path = os.path.join(os.path.dirname(__file__), '../../.env'))
+load_dotenv(dotenv_path = os.path.join(os.path.dirname(__file__), '../.env'))
 TOKEN = os.getenv('TOKEN')
 RM_HOST = os.getenv('RM_HOST')
 RM_USER = os.getenv('RM_USER')
